@@ -194,14 +194,14 @@ def _activate_window():
     except Exception:
         pass
 
-def _xdotool_click(x: int, y: int):
-    _activate_window()
-    try:
-        subprocess.run(["xdotool", "mousemove", "--sync", str(x), str(y)], timeout=3, stderr=subprocess.DEVNULL)
-        time.sleep(0.15)
-        subprocess.run(["xdotool", "click", "1"], timeout=2, stderr=subprocess.DEVNULL)
-    except Exception:
-        os.system(f"xdotool mousemove {x} {y} click 1 2>/dev/null")
+# def _xdotool_click(x: int, y: int):
+#     _activate_window()
+#     try:
+#         subprocess.run(["xdotool", "mousemove", "--sync", str(x), str(y)], timeout=3, stderr=subprocess.DEVNULL)
+#         time.sleep(0.15)
+#         subprocess.run(["xdotool", "click", "1"], timeout=2, stderr=subprocess.DEVNULL)
+#     except Exception:
+#         os.system(f"xdotool mousemove {x} {y} click 1 2>/dev/null")
 
 #  人机验证处理（使用 SeleniumBase 内置 uc_gui_click_captcha）
 def handle_turnstile(sb) -> bool:
@@ -435,7 +435,7 @@ def _open_renew_modal(sb) -> bool:
     """)
     time.sleep(0.8)
     renew_btn.click()
-    print("🖱️ 已点击 Renew 按钮，等待 ALTCHA 验证框...")
+    print("🖱️ 已点击 Renew 按钮，等待确认框...")
     time.sleep(3)
 
     try:
@@ -447,122 +447,123 @@ def _open_renew_modal(sb) -> bool:
         return False
 
 
-def _solve_altcha(sb) -> bool:
-    """处理 ALTCHA 人机验证"""
-    print("\n🔐 处理 ALTCHA 人机验证...")
-    time.sleep(2)
-
+# def _solve_altcha(sb) -> bool:
+#     """处理 ALTCHA 人机验证"""
+#     print("\n🔐 处理 ALTCHA 人机验证...")
+#     time.sleep(2)
+#
     # 先检查是否已自动通过
-    if sb.execute_script(_ALTCHA_SOLVED_JS):
-        print("✅ ALTCHA 已自动通过")
-        return True
-
+#     if sb.execute_script(_ALTCHA_SOLVED_JS):
+#         print("✅ ALTCHA 已自动通过")
+#         return True
+#
     # 展开模态框内 iframe 并获取坐标
-    coords = None
-    try:
-        coords = sb.execute_script(_ALTCHA_EXPAND_JS)
-    except Exception:
-        pass
-
-    if coords:
-        print(f"  📍 找到模态框内 iframe 坐标: ({coords['cx']}, {coords['cy']})")
-
+#     coords = None
+#     try:
+#         coords = sb.execute_script(_ALTCHA_EXPAND_JS)
+#     except Exception:
+#         pass
+#
+#     if coords:
+#         print(f"  📍 找到模态框内 iframe 坐标: ({coords['cx']}, {coords['cy']})")
+#
     # 最多尝试 3 轮
-    for attempt in range(3):
-        if sb.execute_script(_ALTCHA_SOLVED_JS):
-            print(f"✅ ALTCHA 验证通过（第 {attempt + 1} 轮）")
-            return True
-
+#     for attempt in range(3):
+#         if sb.execute_script(_ALTCHA_SOLVED_JS):
+#             print(f"✅ ALTCHA 验证通过（第 {attempt + 1} 轮）")
+#             return True
+#
         # 策略 1: xdotool 物理点击 iframe 坐标
-        if coords:
-            try:
-                wi = sb.execute_script(_WININFO_JS)
-            except Exception:
-                wi = {"sx": 0, "sy": 0, "oh": 800, "ih": 768}
-            bar = wi["oh"] - wi["ih"]
-            ax  = coords["cx"] + wi["sx"]
-            ay  = coords["cy"] + wi["sy"] + bar
-            print(f"🖱️  ALTCHA点击复选框  ({ax}, {ay})")
-            _xdotool_click(ax, ay)
-
+#         if coords:
+#             try:
+#                 wi = sb.execute_script(_WININFO_JS)
+#             except Exception:
+#                 wi = {"sx": 0, "sy": 0, "oh": 800, "ih": 768}
+#             bar = wi["oh"] - wi["ih"]
+#             ax  = coords["cx"] + wi["sx"]
+#             ay  = coords["cy"] + wi["sy"] + bar
+#             print(f"🖱️  ALTCHA点击复选框  ({ax}, {ay})")
+#             _xdotool_click(ax, ay)
+#
         # 策略 2: SeleniumBase 原生点击模态框内 iframe 元素
-        try:
-            iframes = sb.find_elements('div.modal.show iframe')
-            for iframe in iframes:
-                try:
-                    iframe.click()
-                    print("🖱️  SeleniumBase 点击模态框 iframe")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
+#         try:
+#             iframes = sb.find_elements('div.modal.show iframe')
+#             for iframe in iframes:
+#                 try:
+#                     iframe.click()
+#                     print("🖱️  SeleniumBase 点击模态框 iframe")
+#                 except Exception:
+#                     pass
+#         except Exception:
+#             pass
+#
         # 策略 3: JS 遍历模态框内所有可点击元素
-        sb.execute_script("""
-            (function(){
-                var modal = document.querySelector('div.modal.show');
-                if (!modal) return;
-                // 点击 iframe
-                var iframes = modal.querySelectorAll('iframe');
-                for (var i = 0; i < iframes.length; i++) {
-                    iframes[i].click();
-                    iframes[i].dispatchEvent(new MouseEvent('click', {bubbles:true}));
-                }
-                // 点击含 checkbox 的 label
-                var labels = modal.querySelectorAll('label');
-                for (var j = 0; j < labels.length; j++) {
-                    var txt = (labels[j].textContent || '').toLowerCase();
-                    if (txt.includes('robot') || txt.includes('captcha') || txt.includes('verify'))
-                        labels[j].click();
-                }
-                // 点击 checkbox
-                var cbs = modal.querySelectorAll('input[type="checkbox"]');
-                for (var k = 0; k < cbs.length; k++) {
-                    if (!cbs[k].disabled) {
-                        cbs[k].click();
-                        cbs[k].dispatchEvent(new MouseEvent('click', {bubbles:true}));
-                    }
-                }
-            })()
-        """)
-
+#         sb.execute_script("""
+#             (function(){
+#                 var modal = document.querySelector('div.modal.show');
+#                 if (!modal) return;
+#                 // 点击 iframe
+#                 var iframes = modal.querySelectorAll('iframe');
+#                 for (var i = 0; i < iframes.length; i++) {
+#                     iframes[i].click();
+#                     iframes[i].dispatchEvent(new MouseEvent('click', {bubbles:true}));
+#                 }
+#                 // 点击含 checkbox 的 label
+#                 var labels = modal.querySelectorAll('label');
+#                 for (var j = 0; j < labels.length; j++) {
+#                     var txt = (labels[j].textContent || '').toLowerCase();
+#                     if (txt.includes('robot') || txt.includes('captcha') || txt.includes('verify'))
+#                         labels[j].click();
+#                 }
+#                 // 点击 checkbox
+#                 var cbs = modal.querySelectorAll('input[type="checkbox"]');
+#                 for (var k = 0; k < cbs.length; k++) {
+#                     if (!cbs[k].disabled) {
+#                         cbs[k].click();
+#                         cbs[k].dispatchEvent(new MouseEvent('click', {bubbles:true}));
+#                     }
+#                 }
+#             })()
+#         """)
+#
         # 等待验证结果
-        for _ in range(6):
-            time.sleep(1)
-            if sb.execute_script(_ALTCHA_SOLVED_JS):
-                print(f"✅ ALTCHA 验证通过（第 {attempt + 1} 轮）")
-                return True
-
-        print(f"  ⚠️ 第 {attempt + 1} 轮未通过，重试...")
+#         for _ in range(6):
+#             time.sleep(1)
+#             if sb.execute_script(_ALTCHA_SOLVED_JS):
+#                 print(f"✅ ALTCHA 验证通过（第 {attempt + 1} 轮）")
+#                 return True
+#
+#         print(f"  ⚠️ 第 {attempt + 1} 轮未通过，重试...")
         # 重新获取坐标（iframe 可能已重新渲染）
-        try:
-            new_coords = sb.execute_script(_ALTCHA_EXPAND_JS)
-            if new_coords:
-                coords = new_coords
-        except Exception:
-            pass
-
-    print("  ❌ ALTCHA 3 轮均失败")
-    return False
-
+#         try:
+#             new_coords = sb.execute_script(_ALTCHA_EXPAND_JS)
+#             if new_coords:
+#                 coords = new_coords
+#         except Exception:
+#             pass
+#
+#     print("  ❌ ALTCHA 3 轮均失败")
+#     return False
+#
+#
 
 def _submit_renew(sb):
     """点击模态框内的 Renew 提交按钮"""
     print("🖱️  点击模态框中的 Renew 按钮...")
     try:
-        submit = sb.find_element('div.modal.show button.btn-primary', timeout=5)
+        submit = sb.find_element('div.modal-footer button.btn.btn-primary', timeout=10)
         submit.click()
     except Exception:
         sb.execute_script("""
             (function(){
-                var m = document.querySelector('div.modal.show');
+                var m = document.querySelector('button.btn.btn-primary');
                 if (!m) return;
                 var bs = m.querySelectorAll('button');
                 for (var i = 0; i < bs.length; i++)
                     if (/renew/i.test(bs[i].textContent)) bs[i].click();
             })()
         """)
-    time.sleep(3)
+    time.sleep(8)
 
 
 def _check_renew_result(sb):
@@ -599,9 +600,9 @@ def renew_server(sb):
     if not _open_renew_modal(sb):
         return
 
-    altcha_ok = _solve_altcha(sb)
-    if not altcha_ok:
-        print("⚠️ ALTCHA 验证未通过，仍尝试提交 Renew...")
+    # altcha_ok = _solve_altcha(sb)
+    # if not altcha_ok:
+    #     print("⚠️ ALTCHA 验证未通过，仍尝试提交 Renew...")
 
     _submit_renew(sb)
     _check_renew_result(sb)
@@ -609,78 +610,124 @@ def renew_server(sb):
 
 # ===== Cloudflare WARP 网络 =====
 
-def print_exit_ip(sb=None):
-    """优先从浏览器读取出口 IP，失败则走系统请求。"""
-    if sb is not None:
+def _curl_ip(ipv6):
+    flag = "-6" if ipv6 else "-4"
+    urls = (
+        ("https://api64.ipify.org", "https://ipv6.icanhazip.com", "https://api-ipv6.ip.sb/ip")
+        if ipv6 else
+        ("https://api.ipify.org", "https://ipv4.icanhazip.com", "https://api-ipv4.ip.sb/ip")
+    )
+    for url in urls:
         try:
-            sb.open("https://api.ip.sb/ip")
-            ip = (sb.get_text("body") or "").strip()
-            if ip:
-                print(f"📍  当前出口IP: {ip}")
+            proc = subprocess.run(
+                ["curl", flag, "-sS", "--max-time", "10", url],
+                capture_output=True, text=True, timeout=15,
+            )
+            ip = (proc.stdout or "").strip()
+            if proc.returncode == 0 and ip and " " not in ip and "<" not in ip:
                 return ip
         except Exception:
-            pass
+            continue
+    return ""
+
+
+def print_exit_ips(prefix="当前"):
+    v4 = _curl_ip(False)
+    v6 = _curl_ip(True)
+    print("📍 %s IPv4: %s" % (prefix, v4 or "无"))
+    print("📍 %s IPv6: %s" % (prefix, v6 or "无"))
+    return v4, v6
+
+
+def get_current_ip():
+    v4, v6 = print_exit_ips("当前")
+    return v6 or v4 or ""
+
+
+def _warp_cli(*args, check=False):
+    return subprocess.run(
+        ["sudo", "warp-cli", "--accept-tos"] + list(args),
+        check=check, timeout=30, capture_output=True, text=True,
+    )
+
+
+def prefer_ipv6():
     try:
-        ip = requests.get("https://api.ipify.org", timeout=10).text.strip()
-        print(f"📍  当前出口IP: {ip}")
-        return ip
+        subprocess.run(["sudo", "sysctl", "-w", "net.ipv6.conf.all.disable_ipv6=0"], check=False, timeout=10, capture_output=True)
+        subprocess.run(["sudo", "sysctl", "-w", "net.ipv6.conf.default.disable_ipv6=0"], check=False, timeout=10, capture_output=True)
+        subprocess.run(
+            ["sudo", "bash", "-c", "grep -q 'precedence ::/0 100' /etc/gai.conf 2>/dev/null || echo 'precedence ::/0 100' >> /etc/gai.conf"],
+            check=False, timeout=10, capture_output=True,
+        )
     except Exception as e:
-        print(f"⚠️ 获取出口 IP 失败: {e}")
-        return ""
+        print("⚠️ 配置 IPv6 优先失败: %s" % e)
 
 
-def restart_warp():
-    """断开并重新注册 WARP，更换出口 IP（与 Wispbyte 相同做法）。"""
+def wait_warp_connected(timeout=40):
+    start = time.time()
+    last = ""
+    while time.time() - start < timeout:
+        proc = _warp_cli("status")
+        last = "%s%s" % (proc.stdout or "", proc.stderr or "")
+        if "Connected" in last and "Disconnected" not in last:
+            return True
+        time.sleep(2)
+    print("⚠️ WARP 未进入 Connected 状态: %s" % ((last.strip()[:300]) or "empty"))
+    return False
+
+
+def reset_warp_identity():
+    _warp_cli("disconnect")
+    time.sleep(1)
+    _warp_cli("registration", "delete")
+    subprocess.run(["sudo", "systemctl", "stop", "warp-svc"], check=False, timeout=30, capture_output=True)
+    subprocess.run(["sudo", "rm", "-rf", "/var/lib/cloudflare-warp"], check=False, timeout=30, capture_output=True)
+    subprocess.run(["sudo", "systemctl", "start", "warp-svc"], check=False, timeout=30, capture_output=True)
+    time.sleep(4)
+    _warp_cli("registration", "new", check=True)
+    mode = _warp_cli("mode", "warp")
+    if mode.returncode:
+        print("⚠️ 切换 warp mode 失败: %s" % ((mode.stderr or mode.stdout or "").strip()[:200]))
+    _warp_cli("connect", check=True)
+    wait_warp_connected(40)
+    time.sleep(5)
+
+
+def restart_warp(max_rounds=3):
     if not shutil.which("warp-cli"):
         print("⚠️ 未找到 warp-cli，跳过 WARP 重连（本地直连运行时无需此步骤）")
         return False
-    print("🔄 正在重启 WARP 以更换 IP...")
-    try:
-        old_ip = requests.get("https://api.ipify.org", timeout=10).text.strip()
-        print(f"📍 当前 IP: {old_ip}")
-    except Exception:
-        old_ip = "未知"
-
-    try:
-        subprocess.run(
-            ["sudo", "warp-cli", "--accept-tos", "disconnect"],
-            check=False, timeout=30, capture_output=True,
-        )
-        time.sleep(3)
+    prefer_ipv6()
+    print("🔄 正在重启 WARP 以更换出口（优先切换 IPv6）...")
+    old_v4, old_v6 = print_exit_ips("当前")
+    last_v4, last_v6 = old_v4, old_v6
+    for round_i in range(1, max_rounds + 1):
+        print("  ↻ 第 %s/%s 轮重置 WARP 身份..." % (round_i, max_rounds))
         try:
-            subprocess.run(
-                ["sudo", "warp-cli", "--accept-tos", "registration", "delete"],
-                check=True, timeout=30, capture_output=True,
-            )
-        except subprocess.CalledProcessError:
-            print("⚠️ 删除 WARP 注册失败（可能未注册），继续...")
-        subprocess.run(
-            ["sudo", "warp-cli", "--accept-tos", "registration", "new"],
-            check=True, timeout=30, capture_output=True,
-        )
-        time.sleep(3)
-        subprocess.run(
-            ["sudo", "warp-cli", "--accept-tos", "connect"],
-            check=True, timeout=30, capture_output=True,
-        )
-        time.sleep(10)
-        new_ip = requests.get("https://api.ipify.org", timeout=10).text.strip()
-        print(f"✅ WARP 重连成功，新 IP: {new_ip}")
-        return True
-    except FileNotFoundError:
-        print("⚠️ 未找到 warp-cli，跳过 WARP 重连（本地直连运行时无需此步骤）")
-        return False
-    except Exception as e:
-        print(f"❌ WARP 重连失败: {e}")
-        return False
-
+            reset_warp_identity()
+        except Exception as e:
+            print("  ⚠️ 重置异常: %s" % e)
+            continue
+        last_v4, last_v6 = print_exit_ips("新")
+        v4_changed = bool(last_v4 and last_v4 != old_v4)
+        v6_changed = bool(last_v6 and last_v6 != old_v6)
+        if last_v6:
+            print("  ✅ 已拿到 IPv6: %s" % last_v6)
+        else:
+            print("  ⚠️ 仍未拿到 IPv6，继续尝试...")
+        if v4_changed or v6_changed:
+            print("✅ WARP 出口已切换  IPv4 %s -> %s  IPv6 %s -> %s" % (old_v4 or "无", last_v4 or "无", old_v6 or "无", last_v6 or "无"))
+            return True
+        print("  ⚠️ 出口 IP 未变化，继续重置...")
+    print("❌ WARP 未能换到新 IP（IPv4=%s, IPv6=%s）" % (last_v4 or "无", last_v6 or "无"))
+    return False
 
 def run_browser_session():
     """启动浏览器，走系统 WARP 出口完成登录和续期。"""
-    sb_kwargs = {"uc": True, "headless": False}
+    sb_kwargs = {"uc": True, "headless": False, "chromium_arg": "--enable-ipv6"}
     print("🚀 启动浏览器...")
     with SB(**sb_kwargs) as sb:
-        print_exit_ip(sb)
+        print_exit_ips("browser")
         if login(sb):
             renew_server(sb)
             return True
