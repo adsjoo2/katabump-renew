@@ -610,124 +610,78 @@ def renew_server(sb):
 
 # ===== Cloudflare WARP 网络 =====
 
-def _curl_ip(ipv6):
-    flag = "-6" if ipv6 else "-4"
-    urls = (
-        ("https://api64.ipify.org", "https://ipv6.icanhazip.com", "https://api-ipv6.ip.sb/ip")
-        if ipv6 else
-        ("https://api.ipify.org", "https://ipv4.icanhazip.com", "https://api-ipv4.ip.sb/ip")
-    )
-    for url in urls:
+def print_exit_ip(sb=None):
+    """优先从浏览器读取出口 IP，失败则走系统请求。"""
+    if sb is not None:
         try:
-            proc = subprocess.run(
-                ["curl", flag, "-sS", "--max-time", "10", url],
-                capture_output=True, text=True, timeout=15,
-            )
-            ip = (proc.stdout or "").strip()
-            if proc.returncode == 0 and ip and " " not in ip and "<" not in ip:
+            sb.open("https://api.ip.sb/ip")
+            ip = (sb.get_text("body") or "").strip()
+            if ip:
+                print(f"📍  当前出口IP: {ip}")
                 return ip
         except Exception:
-            continue
-    return ""
-
-
-def print_exit_ips(prefix="当前"):
-    v4 = _curl_ip(False)
-    v6 = _curl_ip(True)
-    print("📍 %s IPv4: %s" % (prefix, v4 or "无"))
-    print("📍 %s IPv6: %s" % (prefix, v6 or "无"))
-    return v4, v6
-
-
-def get_current_ip():
-    v4, v6 = print_exit_ips("当前")
-    return v6 or v4 or ""
-
-
-def _warp_cli(*args, check=False):
-    return subprocess.run(
-        ["sudo", "warp-cli", "--accept-tos"] + list(args),
-        check=check, timeout=30, capture_output=True, text=True,
-    )
-
-
-def prefer_ipv6():
+            pass
     try:
-        subprocess.run(["sudo", "sysctl", "-w", "net.ipv6.conf.all.disable_ipv6=0"], check=False, timeout=10, capture_output=True)
-        subprocess.run(["sudo", "sysctl", "-w", "net.ipv6.conf.default.disable_ipv6=0"], check=False, timeout=10, capture_output=True)
-        subprocess.run(
-            ["sudo", "bash", "-c", "grep -q 'precedence ::/0 100' /etc/gai.conf 2>/dev/null || echo 'precedence ::/0 100' >> /etc/gai.conf"],
-            check=False, timeout=10, capture_output=True,
-        )
+        ip = requests.get("https://api.ipify.org", timeout=10).text.strip()
+        print(f"📍  当前出口IP: {ip}")
+        return ip
     except Exception as e:
-        print("⚠️ 配置 IPv6 优先失败: %s" % e)
+        print(f"⚠️ 获取出口 IP 失败: {e}")
+        return ""
 
 
-def wait_warp_connected(timeout=40):
-    start = time.time()
-    last = ""
-    while time.time() - start < timeout:
-        proc = _warp_cli("status")
-        last = "%s%s" % (proc.stdout or "", proc.stderr or "")
-        if "Connected" in last and "Disconnected" not in last:
-            return True
-        time.sleep(2)
-    print("⚠️ WARP 未进入 Connected 状态: %s" % ((last.strip()[:300]) or "empty"))
-    return False
-
-
-def reset_warp_identity():
-    _warp_cli("disconnect")
-    time.sleep(1)
-    _warp_cli("registration", "delete")
-    subprocess.run(["sudo", "systemctl", "stop", "warp-svc"], check=False, timeout=30, capture_output=True)
-    subprocess.run(["sudo", "rm", "-rf", "/var/lib/cloudflare-warp"], check=False, timeout=30, capture_output=True)
-    subprocess.run(["sudo", "systemctl", "start", "warp-svc"], check=False, timeout=30, capture_output=True)
-    time.sleep(4)
-    _warp_cli("registration", "new", check=True)
-    mode = _warp_cli("mode", "warp")
-    if mode.returncode:
-        print("⚠️ 切换 warp mode 失败: %s" % ((mode.stderr or mode.stdout or "").strip()[:200]))
-    _warp_cli("connect", check=True)
-    wait_warp_connected(40)
-    time.sleep(5)
-
-
-def restart_warp(max_rounds=3):
+def restart_warp():
+    """断开并重新注册 WARP，更换出口 IP（与 Wispbyte 相同做法）。"""
     if not shutil.which("warp-cli"):
         print("⚠️ 未找到 warp-cli，跳过 WARP 重连（本地直连运行时无需此步骤）")
         return False
-    prefer_ipv6()
-    print("🔄 正在重启 WARP 以更换出口（优先切换 IPv6）...")
-    old_v4, old_v6 = print_exit_ips("当前")
-    last_v4, last_v6 = old_v4, old_v6
-    for round_i in range(1, max_rounds + 1):
-        print("  ↻ 第 %s/%s 轮重置 WARP 身份..." % (round_i, max_rounds))
+    print("🔄 正在重启 WARP 以更换 IP...")
+    try:
+        old_ip = requests.get("https://api.ipify.org", timeout=10).text.strip()
+        print(f"📍 当前 IP: {old_ip}")
+    except Exception:
+        old_ip = "未知"
+
+    try:
+        subprocess.run(
+            ["sudo", "warp-cli", "--accept-tos", "disconnect"],
+            check=False, timeout=30, capture_output=True,
+        )
+        time.sleep(3)
         try:
-            reset_warp_identity()
-        except Exception as e:
-            print("  ⚠️ 重置异常: %s" % e)
-            continue
-        last_v4, last_v6 = print_exit_ips("新")
-        v4_changed = bool(last_v4 and last_v4 != old_v4)
-        v6_changed = bool(last_v6 and last_v6 != old_v6)
-        if last_v6:
-            print("  ✅ 已拿到 IPv6: %s" % last_v6)
-        else:
-            print("  ⚠️ 仍未拿到 IPv6，继续尝试...")
-        if v4_changed or v6_changed:
-            print("✅ WARP 出口已切换  IPv4 %s -> %s  IPv6 %s -> %s" % (old_v4 or "无", last_v4 or "无", old_v6 or "无", last_v6 or "无"))
-            return True
-        print("  ⚠️ 出口 IP 未变化，继续重置...")
-    print("❌ WARP 未能换到新 IP（IPv4=%s, IPv6=%s）" % (last_v4 or "无", last_v6 or "无"))
-    return False
+            subprocess.run(
+                ["sudo", "warp-cli", "--accept-tos", "registration", "delete"],
+                check=True, timeout=30, capture_output=True,
+            )
+        except subprocess.CalledProcessError:
+            print("⚠️ 删除 WARP 注册失败（可能未注册），继续...")
+        subprocess.run(
+            ["sudo", "warp-cli", "--accept-tos", "registration", "new"],
+            check=True, timeout=30, capture_output=True,
+        )
+        time.sleep(3)
+        subprocess.run(
+            ["sudo", "warp-cli", "--accept-tos", "connect"],
+            check=True, timeout=30, capture_output=True,
+        )
+        time.sleep(10)
+        new_ip = requests.get("https://api.ipify.org", timeout=10).text.strip()
+        print(f"✅ WARP 重连成功，新 IP: {new_ip}")
+        return True
+    except FileNotFoundError:
+        print("⚠️ 未找到 warp-cli，跳过 WARP 重连（本地直连运行时无需此步骤）")
+        return False
+    except Exception as e:
+        print(f"❌ WARP 重连失败: {e}")
+        return False
+
 
 def run_browser_session():
     """启动浏览器，走系统 WARP 出口完成登录和续期。"""
-    sb_kwargs = {"uc": True, "headless": False, "chromium_arg": "--enable-ipv6"}
+    sb_kwargs = {"uc": True, "headless": False}
     print("🚀 启动浏览器...")
     with SB(**sb_kwargs) as sb:
-        print_exit_ips("browser")
+        print_exit_ip(sb)
         if login(sb):
             renew_server(sb)
             return True
