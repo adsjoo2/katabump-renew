@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: write  
-      contents: read
+      contents: write   # keep-alive 需要 push 权限
     
     steps:
     - uses: actions/checkout@v6
@@ -42,6 +42,15 @@ jobs:
         xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
           python3 app.py
         
+    - name: Keep Repo Active
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        echo "Last run: $(date '+%Y-%m-%d %H:%M:%S')" > keep_alive.txt
+        git add keep_alive.txt
+        git diff --staged --quiet || git commit -m "chore: keep alive $(date '+%Y-%m-%d')"
+        git push
+
     - name: 🧹 清理旧的工作流运行记录
       if: always()
       env:
