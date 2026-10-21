@@ -410,7 +410,7 @@ def _goto_server_detail(sb) -> bool:
     print("🖱️  点击 'See' 进入服务器详情页...")
     see_link.click()
     time.sleep(5)
-    print(f"📄 当前页面: {sb.get_current_url()}")
+    print(f"📄 当前页面: xxx")
     return True
 
 
